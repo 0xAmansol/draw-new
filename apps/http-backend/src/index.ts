@@ -3,6 +3,7 @@ import { client } from "@workspace/db/client";
 import express from "express";
 import { JWT_SECRET } from "@workspace/backend-common/config";
 import jwt from "jsonwebtoken";
+import { middleware } from "./middleware";
 
 const app = express();
 const port = 3000;
@@ -61,15 +62,19 @@ app.post("/signin", async (req, res) => {
       token,
     });
   } catch (error) {
-    console.log(error){
-      res.status(403).json({
-        message:"Unable to signin"
-      })
-    }
+    console.log(error);
+    res.status(403).json({
+      message: "Unable to signin",
+    });
   }
 });
 
-app.post("/room", middleware, (req, res) => {});
+app.post("/room", middleware, (req: express.Request, res: express.Response) => {
+  res.json({
+    message: "room created",
+  });
+  return;
+});
 
 app.listen(port, (res) => {
   console.log(`server running on port ${port}`);
