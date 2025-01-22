@@ -1,68 +1,77 @@
 import { JWT_SECRET } from "@workspace/backend-common/config";
-import { WebSocketServer } from "ws";
-import jwt from "jsonwebtoken";
+import { WebSocketServer, WebSocket } from "ws";
+import jwt, { JwtPayload } from "jsonwebtoken";
 
 const wss = new WebSocketServer({ port: 8080 });
 
-type Users = {
-  userId: string;
-  rooms: string[];
+interface Users {
   ws: WebSocket;
-};
+  rooms: string[];
+  userId: string;
+}
 
 const users: Users[] = [];
 
 function checkUser(token: string): string | null {
-  if (!token) {
-    return null;
-  }
-
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    if (!decoded || typeof decoded == "string") {
+
+    if (typeof decoded == "string") {
       return null;
     }
+
+    if (!decoded || !(decoded as JwtPayload).userId) {
+      return null;
+    }
+
     return decoded.userId;
-  } catch (error) {
-    console.error(error);
+  } catch (e) {
     return null;
   }
 }
 
 wss.on("connection", (ws, request) => {
-  console.log("connection on wss is made");
-
   const url = request.url;
-  const queryParam = new URLSearchParams(url?.split("?")[1]);
-  const token = queryParam.get("token");
+  if (!url) {
+    return;
+  }
 
-  const userId = checkUser(token as string);
+  const queryParams = new URLSearchParams(url.split("?")[1]);
+  const token = queryParams.get("token") || "";
+  const userId = checkUser(token);
+
   if (userId == null) {
     ws.close();
     return;
   }
 
-  ws.on("messsage", (message) => {
-    const parsedData = JSON.parse(message as string);
-    if (!parsedData) {
-      console.log("Invalid message");
+  users.push({
+    userId,
+    rooms: [],
+    ws,
+  });
+
+  ws.on("message", (message) => {
+    let parsedData;
+    try {
+      parsedData = JSON.parse(message as unknown as string);
+    } catch (e) {
+      console.error("Invalid JSON received:", e);
       return;
     }
 
     if (parsedData.type == "join_room") {
-      const roomId = parsedData.roomId;
-      const user = users.find((x) => x.userId == userId);
-      user?.rooms.push(roomId);
+      const user = users.find((x) => x.ws == ws);
+      user?.rooms.push(parsedData.roomId);
+      console.log("user joined room", parsedData.roomId);
     }
 
     if (parsedData.type == "leave_room") {
-      const roomId = parsedData.roomId;
-      const user = users.find((x) => x.userId == userId);
+      const user = users.find((x) => x.ws == ws);
       if (!user) {
         return;
       }
-
-      user.rooms = user.rooms.filter((x) => x !== roomId);
+      user.rooms = user?.rooms.filter((x) => x == parsedData.roomId);
     }
 
     if (parsedData.type == "chat") {

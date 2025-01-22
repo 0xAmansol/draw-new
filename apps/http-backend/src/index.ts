@@ -1,4 +1,8 @@
-import { SignUpSchema, UserSchema } from "@workspace/backend-common/types";
+import {
+  RoomSchema,
+  SignUpSchema,
+  UserSchema,
+} from "@workspace/backend-common/types";
 import { client } from "@workspace/db/client";
 import express from "express";
 import { JWT_SECRET } from "@workspace/backend-common/config";
@@ -6,7 +10,7 @@ import jwt from "jsonwebtoken";
 import { middleware } from "./middleware";
 
 const app = express();
-const port = 3000;
+const port = 3001;
 
 app.use(express.json());
 
@@ -27,6 +31,9 @@ app.post("/signup", async (req, res) => {
         name: parsedUser.data.name,
       },
     });
+    res.json({
+      message: "user created",
+    });
   } catch (error) {
     console.log(error);
     res.status(403).json({
@@ -42,6 +49,12 @@ app.post("/signin", async (req, res) => {
       message: "invalid inputs",
     });
     return;
+  }
+
+  if (!parsedUser.data.email || !parsedUser.data.password) {
+    res.status(403).json({
+      message: "invalid inputs",
+    });
   }
 
   try {
@@ -69,11 +82,36 @@ app.post("/signin", async (req, res) => {
   }
 });
 
-app.post("/room", middleware, (req: express.Request, res: express.Response) => {
-  res.json({
-    message: "room created",
-  });
-  return;
+app.post("/room", middleware, async (req, res) => {
+  const parsedUser = RoomSchema.safeParse(req.body);
+  if (!parsedUser.success) {
+    res.json({
+      message: "Invalid room name",
+    });
+    return;
+  }
+
+  const userId = req.userId;
+  if (!userId) {
+    res.status(403).json({
+      message: "User not authenticated",
+    });
+    return;
+  }
+
+  try {
+    const room = await client.room.create({
+      data: {
+        slug: parsedUser.data.name,
+        adminId: userId,
+      },
+    });
+    res.json({ roomId: room.id });
+  } catch (error) {
+    res.status(500).json({
+      message: "Error creating room",
+    });
+  }
 });
 
 app.listen(port, (res) => {
