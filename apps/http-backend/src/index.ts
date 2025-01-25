@@ -3,14 +3,18 @@ import {
   SignUpSchema,
   UserSchema,
 } from "@workspace/backend-common/types";
-import { client } from "@workspace/db/client";
+
 import express from "express";
 import { JWT_SECRET } from "@workspace/backend-common/config";
 import jwt from "jsonwebtoken";
 import { middleware } from "./middleware";
+import { client } from "@workspace/db/client";
+import cors from "cors";
 
 const app = express();
 const port = 3001;
+
+app.use(cors());
 
 app.use(express.json());
 
@@ -33,6 +37,7 @@ app.post("/signup", async (req, res) => {
     });
     res.json({
       message: "user created",
+      userId: user.id,
     });
   } catch (error) {
     console.log(error);
@@ -110,6 +115,38 @@ app.post("/room", middleware, async (req, res) => {
   } catch (error) {
     res.status(500).json({
       message: "Error creating room",
+    });
+  }
+});
+
+app.get("/room/:id", async (req, res) => {
+  const roomId = parseInt(req.params.id);
+  const userId = req.headers.authorization;
+  console.log(roomId);
+  if (!userId) {
+    res.status(403).json({
+      message: "unauthorized",
+    });
+    return;
+  }
+  try {
+    const messages = await client.room.findMany({
+      where: {
+        id: roomId,
+      },
+      orderBy: {
+        chats: {
+          _count: "desc",
+        },
+      },
+    });
+    res.json({
+      messages,
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      message: "Error fetching room",
     });
   }
 });

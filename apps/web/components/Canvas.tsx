@@ -4,6 +4,11 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import rough from "roughjs/bin/rough";
 import type { Drawable } from "roughjs/bin/core";
 
+import {
+  getExistingShapes,
+  pushExistingShape,
+} from "@/hooks/getExistingShapes";
+
 const generator = rough.generator();
 
 interface ElementParams {
@@ -13,12 +18,16 @@ interface ElementParams {
   y2: number;
 }
 
-interface Element extends ElementParams {
+export interface Element extends ElementParams {
   roughElement: Drawable;
 }
 
 type CanvasProps = {
   selectedTool: string;
+  userId: string;
+  params: {
+    roomId: string;
+  };
 };
 
 function createElement(params: ElementParams, tool: string): Element {
@@ -63,13 +72,24 @@ function createElement(params: ElementParams, tool: string): Element {
   return { ...params, roughElement };
 }
 
-const Canvas = ({ selectedTool }: CanvasProps) => {
+const Canvas = ({ selectedTool, params, userId }: CanvasProps) => {
   const [elements, setElements] = useState<Element[]>([]);
   const [drawing, setDrawing] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const roomId = params.roomId;
+
+  useEffect(() => {
+    const fetchShapes = async () => {
+      const shapes = await getExistingShapes({ params: { roomId } });
+
+      setElements(shapes);
+    };
+    fetchShapes();
+  }, [roomId]);
 
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
+
     if (canvas) {
       const ctx = canvas.getContext("2d");
       if (ctx) {
@@ -143,7 +163,9 @@ const Canvas = ({ selectedTool }: CanvasProps) => {
 
   const handleMouseUp = () => {
     setDrawing(false);
-    console.log(elements);
+    const shape = elements[elements.length - 1];
+    if (!shape) return;
+    pushExistingShape({ roomId: Number(roomId), message: shape, userId });
   };
 
   return (

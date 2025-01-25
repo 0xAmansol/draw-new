@@ -3,8 +3,10 @@
 import Canvas from "@/components/Canvas";
 import { AppleStyleDock } from "@/components/Dock";
 import { useState } from "react";
+import { useParams } from "next/navigation";
 
 const Dashboard = () => {
+  const { roomid } = useParams();
   const [selectedTool, setSelectedTool] = useState<string>("");
   return (
     <div>
@@ -12,7 +14,10 @@ const Dashboard = () => {
         selectedTool={selectedTool}
         setSelectedTool={setSelectedTool}
       />
-      <Canvas selectedTool={selectedTool} />
+      <Canvas
+        selectedTool={selectedTool}
+        params={{ roomId: roomid as string }}
+      />
     </div>
   );
 };
