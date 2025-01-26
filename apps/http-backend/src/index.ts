@@ -119,25 +119,18 @@ app.post("/room", middleware, async (req, res) => {
   }
 });
 
-app.get("/room/:id", async (req, res) => {
-  const roomId = parseInt(req.params.id);
+app.get("/chats/:id", async (req, res) => {
+  const roomId = Number(req.params.id);
   const userId = req.headers.authorization;
   console.log(roomId);
-  if (!userId) {
-    res.status(403).json({
-      message: "unauthorized",
-    });
-    return;
-  }
+
   try {
-    const messages = await client.room.findMany({
+    const messages = await client.chat.findMany({
       where: {
-        id: roomId,
+        roomId: roomId,
       },
       orderBy: {
-        chats: {
-          _count: "desc",
-        },
+        id: "desc",
       },
     });
     res.json({

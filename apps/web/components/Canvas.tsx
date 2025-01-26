@@ -4,10 +4,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import rough from "roughjs/bin/rough";
 import type { Drawable } from "roughjs/bin/core";
 
-import {
-  getExistingShapes,
-  pushExistingShape,
-} from "@/hooks/getExistingShapes";
+import { getExistingShapes } from "@/hooks/getExistingShapes";
 
 const generator = rough.generator();
 
@@ -24,10 +21,8 @@ export interface Element extends ElementParams {
 
 type CanvasProps = {
   selectedTool: string;
-  userId: string;
-  params: {
-    roomId: string;
-  };
+  roomId: string;
+  socket: WebSocket | null;
 };
 
 function createElement(params: ElementParams, tool: string): Element {
@@ -72,16 +67,25 @@ function createElement(params: ElementParams, tool: string): Element {
   return { ...params, roughElement };
 }
 
-const Canvas = ({ selectedTool, params, userId }: CanvasProps) => {
+const Canvas = ({ selectedTool, roomId, socket }: CanvasProps) => {
   const [elements, setElements] = useState<Element[]>([]);
   const [drawing, setDrawing] = useState(false);
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const roomId = params.roomId;
+
+  if (socket) {
+    socket.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type == "chat") {
+        const parsedShape = JSON.parse(message.message);
+        elements.push(parsedShape);
+      }
+    };
+  }
 
   useEffect(() => {
     const fetchShapes = async () => {
-      const shapes = await getExistingShapes({ params: { roomId } });
-
+      const shapes = await getExistingShapes(roomId);
       setElements(shapes);
     };
     fetchShapes();
@@ -163,9 +167,13 @@ const Canvas = ({ selectedTool, params, userId }: CanvasProps) => {
 
   const handleMouseUp = () => {
     setDrawing(false);
-    const shape = elements[elements.length - 1];
-    if (!shape) return;
-    pushExistingShape({ roomId: Number(roomId), message: shape, userId });
+    const newShape = JSON.stringify(elements.length - 1);
+    socket?.send(
+      JSON.stringify({
+        type: "chat",
+        message: newShape,
+      })
+    );
   };
 
   return (
