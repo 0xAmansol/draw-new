@@ -1,6 +1,7 @@
 import { JWT_SECRET } from "@workspace/backend-common/config";
 import { WebSocketServer, WebSocket } from "ws";
 import jwt, { JwtPayload } from "jsonwebtoken";
+import { client } from "@workspace/db/client";
 
 const wss = new WebSocketServer({ port: 8080 });
 
@@ -51,7 +52,7 @@ wss.on("connection", (ws, request) => {
     ws,
   });
 
-  ws.on("message", (message) => {
+  ws.on("message", async (message) => {
     let parsedData;
     try {
       parsedData = JSON.parse(message as unknown as string);
@@ -76,7 +77,15 @@ wss.on("connection", (ws, request) => {
 
     if (parsedData.type == "chat") {
       const roomId = parsedData.roomId;
+      console.log(roomId);
       const message = parsedData.message;
+      await client.chat.create({
+        data: {
+          roomId: Number(roomId),
+          message,
+          userId,
+        },
+      });
       users.forEach((user) => {
         if (user.rooms.includes(roomId)) {
           user.ws.send(

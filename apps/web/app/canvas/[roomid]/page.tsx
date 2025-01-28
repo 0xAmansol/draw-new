@@ -1,18 +1,15 @@
 "use client";
 
+import Canvas from "@/components/Canvas";
 import { AppleStyleDock } from "@/components/Dock";
-import MainCanvas from "@/components/MainCanvas";
+
+import { useParams } from "next/navigation";
 import { useState } from "react";
 
-const Dashboard = ({
-  params,
-}: {
-  params: {
-    roomId: string;
-  };
-}) => {
+const Dashboard = () => {
   const [selectedTool, setSelectedTool] = useState<string>("");
-  const roomId = params.roomId;
+  const params = useParams();
+  const roomId = params.roomid?.toString() ?? "";
   console.log(roomId);
 
   return (
@@ -21,7 +18,7 @@ const Dashboard = ({
         selectedTool={selectedTool}
         setSelectedTool={setSelectedTool}
       />
-      <MainCanvas roomId={roomId} selectedTool={selectedTool} />
+      <Canvas roomId={roomId} selectedTool={selectedTool} />
     </div>
   );
 };

@@ -1,190 +1,172 @@
-"use client";
+import React, { useEffect, useRef, useState } from "react";
+import rough from "roughjs";
+import { Drawable } from "roughjs/bin/core";
 
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import rough from "roughjs/bin/rough";
-import type { Drawable } from "roughjs/bin/core";
+interface CanvasProps {
+  selectedTool: string;
+  roomId: string;
+}
 
-import { getExistingShapes } from "@/hooks/getExistingShapes";
-
-const generator = rough.generator();
-
-interface ElementParams {
+interface Params {
   x1: number;
-  y1: number;
   x2: number;
+  y1: number;
   y2: number;
 }
 
-export interface Element extends ElementParams {
-  roughElement: Drawable;
+interface Element extends Params {
+  roughElement: Drawable | undefined;
 }
 
-type CanvasProps = {
-  selectedTool: string;
-  roomId: string;
-  socket: WebSocket | null;
-};
-
-function createElement(params: ElementParams, tool: string): Element {
-  let roughElement;
-  switch (tool) {
-    case "Rectangle":
-      roughElement = generator.rectangle(
-        params.x1,
-        params.y1,
-        params.x2 - params.x1,
-        params.y2 - params.y1,
-        { stroke: "white" }
-      );
-      break;
-    case "Arrow":
-      roughElement = generator.line(
-        params.x1,
-        params.y1,
-        params.x2,
-        params.y2,
-        { stroke: "white" }
-      );
-      break;
-    case "Circle":
-      roughElement = generator.ellipse(
-        params.x1,
-        params.y1,
-        params.x2 - params.x1,
-        params.y2 - params.y1,
-        { stroke: "white" }
-      );
-      break;
-    default:
-      roughElement = generator.rectangle(
-        params.x1,
-        params.y1,
-        params.x2 - params.x1,
-        params.y2 - params.y1,
-        { stroke: "white" }
-      );
-  }
-  return { ...params, roughElement };
-}
-
-const Canvas = ({ selectedTool, roomId, socket }: CanvasProps) => {
+const Canvas = ({ selectedTool, roomId }: CanvasProps) => {
   const [elements, setElements] = useState<Element[]>([]);
   const [drawing, setDrawing] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const rc = useRef<ReturnType<typeof rough.canvas> | null>(null);
+  const generator = useRef<ReturnType<typeof rough.generator> | null>(null);
 
-  if (socket) {
-    socket.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      if (message.type == "chat") {
-        const parsedShape = JSON.parse(message.message);
-        elements.push(parsedShape);
-      }
+  // Set canvas dimensions and initialize RoughJS
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    // Set canvas size to match its container
+    const updateCanvasSize = () => {
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
     };
+    updateCanvasSize();
+    window.addEventListener("resize", updateCanvasSize);
+
+    // Initialize RoughJS canvas and generator
+    rc.current = rough.canvas(canvas);
+    generator.current = rc.current.generator;
+
+    return () => window.removeEventListener("resize", updateCanvasSize);
+  }, []);
+
+  function createElement(tool: string, params: Params): Element {
+    let roughElement;
+    switch (tool) {
+      case "Rectangle":
+        roughElement = generator.current?.rectangle(
+          params.x1,
+          params.y1,
+          params.x2 - params.x1,
+          params.y2 - params.y1,
+          { stroke: "black" }
+        );
+        break;
+      case "Arrow":
+        roughElement = generator.current?.line(
+          params.x1,
+          params.y1,
+          params.x2,
+          params.y2,
+          { stroke: "black" }
+        );
+        break;
+      case "Circle":
+        roughElement = generator.current?.ellipse(
+          params.x1,
+          params.y1,
+          params.x2 - params.x1,
+          params.y2 - params.y1,
+          { stroke: "black" }
+        );
+        break;
+      default:
+        roughElement = generator.current?.rectangle(
+          params.x1,
+          params.y1,
+          params.x2 - params.x1,
+          params.y2 - params.y1,
+          { stroke: "grey" }
+        );
+    }
+    return { ...params, roughElement };
   }
 
+  // Redraw elements when they change
   useEffect(() => {
-    const fetchShapes = async () => {
-      const shapes = await getExistingShapes(roomId);
-      setElements(shapes);
-    };
-    fetchShapes();
-  }, [roomId]);
-
-  useLayoutEffect(() => {
     const canvas = canvasRef.current;
+    if (!canvas || !rc.current) return;
 
-    if (canvas) {
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        const roughCanvas = rough.canvas(canvas);
-        elements.forEach(({ roughElement }) => roughCanvas.draw(roughElement));
-      }
-    }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    elements.forEach(({ roughElement }) => {
+      if (!roughElement) return;
+      rc.current?.draw(roughElement);
+    });
   }, [elements]);
 
-  useEffect(() => {
-    const handleResize = () => {
-      const canvas = canvasRef.current;
-      if (canvas) {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+  const getCanvasCoordinates = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
 
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          const roughCanvas = rough.canvas(canvas);
-          elements.forEach(({ roughElement }) =>
-            roughCanvas.draw(roughElement)
-          );
-        }
-      }
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: clientX - rect.left,
+      y: clientY - rect.top,
     };
-
-    handleResize();
-
-    window.addEventListener("resize", handleResize);
-
-    return () => window.removeEventListener("resize", handleResize);
-  }, [elements]);
-
-  const handleMouseDown = (event: React.MouseEvent) => {
-    setDrawing(true);
-    const { clientX, clientY } = event;
-    const element = createElement(
-      {
-        x1: clientX,
-        y1: clientY,
-        x2: clientX,
-        y2: clientY,
-      },
-      selectedTool
-    );
-    setElements((prevState) => [...prevState, element]);
   };
 
-  const handleMouseMove = (event: React.MouseEvent) => {
+  const HandleMouseDown = (event: React.MouseEvent) => {
+    const { clientX, clientY } = event;
+    const { x, y } = getCanvasCoordinates(clientX, clientY);
+    setDrawing(true);
+
+    const element = createElement(selectedTool, {
+      x1: x,
+      y1: y,
+      x2: x,
+      y2: y,
+    });
+    setElements((prev) => [...prev, element]);
+  };
+
+  const HandleMouseMove = (event: React.MouseEvent) => {
     if (!drawing) return;
 
     const { clientX, clientY } = event;
+    const { x, y } = getCanvasCoordinates(clientX, clientY);
     const index = elements.length - 1;
     const element = elements[index];
     if (!element) return;
 
-    const { x1, y1 } = element;
-    const updatedElement = createElement(
-      { x1, y1, x2: clientX, y2: clientY },
-      selectedTool
-    );
+    const updatedElement = createElement(selectedTool, {
+      x1: element.x1,
+      y1: element.y1,
+      x2: x,
+      y2: y,
+    });
 
-    setElements((prevState) => {
-      const newElements = [...prevState];
+    setElements((prev) => {
+      const newElements = [...prev];
       newElements[index] = updatedElement;
       return newElements;
     });
   };
 
-  const handleMouseUp = () => {
+  const HandleMouseUp = () => {
     setDrawing(false);
-    const newShape = JSON.stringify(elements.length - 1);
-    socket?.send(
-      JSON.stringify({
-        type: "chat",
-        message: newShape,
-      })
-    );
   };
 
   return (
-    <div>
+    <div
+      className="canvas-container"
+      style={{ width: "100%", height: "100vh" }}
+    >
       <canvas
         ref={canvasRef}
-        className="bg-black"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-      ></canvas>
+        onMouseDown={HandleMouseDown}
+        onMouseUp={HandleMouseUp}
+        onMouseMove={HandleMouseMove}
+        style={{ width: "100%", height: "100%" }}
+      />
     </div>
   );
 };

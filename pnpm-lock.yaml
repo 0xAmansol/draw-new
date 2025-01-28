@@ -159,6 +159,9 @@ importers:
       '@workspace/backend-common':
         specifier: workspace:*
         version: link:../../packages/backend-common
+      '@workspace/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@workspace/typescript-config':
         specifier: workspace:*
         version: link:../../packages/typescript-config
