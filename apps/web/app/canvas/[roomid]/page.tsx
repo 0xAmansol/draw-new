@@ -2,6 +2,7 @@
 
 import Canvas from "@/components/Canvas";
 import { AppleStyleDock } from "@/components/Dock";
+import { WS_BACKEND_URL } from "@workspace/backend-common/config";
 
 import { useParams } from "next/navigation";
 import { useState } from "react";
