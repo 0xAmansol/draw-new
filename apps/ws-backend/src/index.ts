@@ -63,6 +63,7 @@ wss.on("connection", (ws, request) => {
 
     if (parsedData.type == "join_room") {
       const user = users.find((x) => x.ws == ws);
+
       user?.rooms.push(parsedData.roomId);
       console.log("user joined room", parsedData.roomId);
     }
