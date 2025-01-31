@@ -1,8 +1,10 @@
 import { getExistingElements } from "@/lib/getExistingElements";
 import { WS_BACKEND_URL } from "@workspace/backend-common/config";
+
 import React, { useEffect, useRef, useState } from "react";
 import rough from "roughjs";
 import { Drawable } from "roughjs/bin/core";
+import { Loading } from "./text-rotate";
 
 interface CanvasProps {
   selectedTool: string;
@@ -17,11 +19,10 @@ export interface Params {
 }
 
 export interface Element extends Params {
-  roughElement: Drawable; // Make required
+  roughElement: Drawable;
   tool: string;
 }
 
-// Add serialization helpers
 const serializeElement = (element: Element) => ({
   x1: element.x1,
   y1: element.y1,
@@ -41,64 +42,82 @@ const serializeElement = (element: Element) => ({
   },
 });
 
-const deserializeElement = (data: any): Element => {
-  return {
-    x1: data.x1,
-    y1: data.y1,
-    x2: data.x2,
-    y2: data.y2,
-    tool: data.tool,
-    roughElement: {
-      ...data.roughElement,
-      sets: data.roughElement.sets,
-    },
-  };
-};
+const deserializeElement = (data: any): Element => ({
+  x1: data.x1,
+  y1: data.y1,
+  x2: data.x2,
+  y2: data.y2,
+  tool: data.tool,
+  roughElement: {
+    ...data.roughElement,
+    sets: data.roughElement.sets,
+  },
+});
 
 const Canvas = ({ selectedTool, roomId }: CanvasProps) => {
+  // State hooks - keep all state declarations together
   const [elements, setElements] = useState<Element[]>([]);
   const [drawing, setDrawing] = useState(false);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [scale, setScale] = useState(1);
+  const [isPanning, setIsPanning] = useState(false);
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Refs - keep all refs together
   const wsRef = useRef<WebSocket | null>(null);
   const drawingElementRef = useRef<Element | null>(null);
   const elementsRef = useRef<Element[]>([]);
-
+  const lastPanPoint = useRef({ x: 0, y: 0 });
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rc = useRef<ReturnType<typeof rough.canvas> | null>(null);
   const generator = useRef<ReturnType<typeof rough.generator> | null>(null);
 
-  // Sync ref with elements state
+  // All useEffect hooks
   useEffect(() => {
     elementsRef.current = elements;
   }, [elements]);
 
-  // WebSocket setup
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Space") setIsSpacePressed(true);
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        setIsSpacePressed(false);
+        setIsPanning(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, []);
+
   useEffect(() => {
     const ws = new WebSocket(
       `${WS_BACKEND_URL}?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJjbTZpMTd6MWgwMDAwaWx6ODdnb2YzdGRrIiwiaWF0IjoxNzM4MTYyNzU2fQ.9DuYwSm74XOjrnfCUVyfIHv3mqwz2A2oJu6y0l8Y4FM`
     );
 
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "join_room", roomId }));
-    };
-
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join_room", roomId }));
     ws.onmessage = (message) => {
       try {
         const data = JSON.parse(message.data);
         if (data.type === "chat") {
-          const elementData = JSON.parse(data.message);
-          const newElement = deserializeElement(elementData);
+          const newElement = deserializeElement(JSON.parse(data.message));
           setElements((prev) => [...prev, newElement]);
         }
       } catch (error) {
         console.error("Error parsing WebSocket message:", error);
       }
     };
-
     wsRef.current = ws;
     return () => ws.close();
   }, [roomId]);
 
-  // Canvas setup
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -110,7 +129,6 @@ const Canvas = ({ selectedTool, roomId }: CanvasProps) => {
 
     updateCanvasSize();
     window.addEventListener("resize", updateCanvasSize);
-
     rc.current = rough.canvas(canvas);
     generator.current = rough.generator();
 
@@ -119,19 +137,42 @@ const Canvas = ({ selectedTool, roomId }: CanvasProps) => {
     };
   }, []);
 
-  // Fetch initial elements
   useEffect(() => {
     const fetchExistingShapes = async () => {
-      const existingShapes = await getExistingElements(roomId);
-      setElements(existingShapes);
+      try {
+        setIsLoading(true);
+        const existingShapes = await getExistingElements(roomId);
+        setElements(existingShapes);
+      } catch (error) {
+        console.log("error fetching shapes: ", error);
+      } finally {
+        setIsLoading(false);
+      }
     };
     fetchExistingShapes();
   }, [roomId]);
 
-  // Drawing logic
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !rc.current) return;
+
+    const ctx = canvas.getContext("2d");
+    ctx?.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx?.save();
+    ctx?.scale(scale, scale);
+    ctx?.translate(offset.x / scale, offset.y / scale);
+
+    elements.forEach(({ roughElement }) => {
+      if (roughElement) rc.current?.draw(roughElement);
+    });
+
+    ctx?.restore();
+  }, [elements, scale, offset]);
+
   const createElement = (tool: string, params: Params): Element => {
-    let roughElement;
     const options = { stroke: "black" };
+    let roughElement;
 
     switch (tool) {
       case "Rectangle":
@@ -162,41 +203,30 @@ const Canvas = ({ selectedTool, roomId }: CanvasProps) => {
         );
         break;
       default:
-        roughElement = undefined;
+        throw new Error(`Unsupported tool: ${tool}`);
     }
 
-    if (!roughElement) {
-      throw new Error(`Failed to create element for tool: ${tool}`);
-    }
-    return { ...params, tool, roughElement };
+    return { ...params, tool, roughElement: roughElement! };
   };
 
-  // Rendering
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !rc.current) return;
-
-    const ctx = canvas.getContext("2d");
-    ctx?.clearRect(0, 0, canvas.width, canvas.height);
-
-    elements.forEach(({ roughElement }) => {
-      if (roughElement) rc.current?.draw(roughElement);
-    });
-  }, [elements]);
-
-  // Event handlers
   const getCanvasCoordinates = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
 
     const rect = canvas.getBoundingClientRect();
     return {
-      x: clientX - rect.left,
-      y: clientY - rect.top,
+      x: (clientX - rect.left - offset.x) / scale,
+      y: (clientY - rect.top - offset.y) / scale,
     };
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (isSpacePressed) {
+      setIsPanning(true);
+      lastPanPoint.current = { x: e.clientX, y: e.clientY };
+      return;
+    }
+
     const { x, y } = getCanvasCoordinates(e.clientX, e.clientY);
     setDrawing(true);
 
@@ -206,36 +236,34 @@ const Canvas = ({ selectedTool, roomId }: CanvasProps) => {
       x2: x,
       y2: y,
     });
-
     drawingElementRef.current = newElement;
     setElements((prev) => [...prev, newElement]);
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!drawing || !drawingElementRef.current) return;
+    if (isPanning) {
+      const deltaX = e.clientX - lastPanPoint.current.x;
+      const deltaY = e.clientY - lastPanPoint.current.y;
+      setOffset((prev) => ({ x: prev.x + deltaX, y: prev.y + deltaY }));
+      lastPanPoint.current = { x: e.clientX, y: e.clientY };
+    } else if (drawing && drawingElementRef.current) {
+      const { x, y } = getCanvasCoordinates(e.clientX, e.clientY);
+      const { x1, y1, tool } = drawingElementRef.current;
 
-    const { x, y } = getCanvasCoordinates(e.clientX, e.clientY);
-    const { x1, y1, tool } = drawingElementRef.current;
-
-    const updatedElement = createElement(tool, {
-      x1,
-      y1,
-      x2: x,
-      y2: y,
-    });
-
-    drawingElementRef.current = updatedElement;
-    setElements((prev) => {
-      const newElements = [...prev];
-      newElements[newElements.length - 1] = updatedElement;
-      return newElements;
-    });
+      const updatedElement = createElement(tool, { x1, y1, x2: x, y2: y });
+      drawingElementRef.current = updatedElement;
+      setElements((prev) => {
+        const newElements = [...prev];
+        newElements[newElements.length - 1] = updatedElement;
+        return newElements;
+      });
+    }
   };
 
   const handleMouseUp = () => {
-    setDrawing(false);
-
-    if (
+    if (isPanning) {
+      setIsPanning(false);
+    } else if (
       drawingElementRef.current &&
       wsRef.current?.readyState === WebSocket.OPEN
     ) {
@@ -246,23 +274,58 @@ const Canvas = ({ selectedTool, roomId }: CanvasProps) => {
       };
       wsRef.current.send(JSON.stringify(elementData));
     }
-
+    setDrawing(false);
     drawingElementRef.current = null;
   };
 
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    const newScale = scale * delta;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const newOffsetX = mouseX - (mouseX - offset.x) * (newScale / scale);
+    const newOffsetY = mouseY - (mouseY - offset.y) * (newScale / scale);
+
+    setScale(newScale);
+    setOffset({ x: newOffsetX, y: newOffsetY });
+  };
+
+  // Return canvas directly without conditional rendering
   return (
     <div
       className="canvas-container"
       style={{ width: "100%", height: "100vh" }}
     >
-      <canvas
-        ref={canvasRef}
-        onMouseDown={handleMouseDown}
-        onMouseUp={handleMouseUp}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={handleMouseUp}
-        style={{ width: "100%", height: "100%" }}
-      />
+      {isLoading ? (
+        <div className="w-full h-full flex items-center justify-center">
+          <div className="flex flex-col items-center gap-2">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
+            <p className="text-sm text-gray-600">Loading canvas...</p>
+          </div>
+        </div>
+      ) : (
+        <canvas
+          ref={canvasRef}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onWheel={handleWheel}
+          style={{
+            width: "100%",
+            height: "100%",
+            cursor: isSpacePressed ? "grab" : "crosshair",
+            ...(isPanning && { cursor: "grabbing" }),
+          }}
+        />
+      )}
     </div>
   );
 };

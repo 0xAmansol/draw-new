@@ -75,8 +75,8 @@ interface DockProps {
 
 export function AppleStyleDock({ selectedTool, setSelectedTool }: DockProps) {
   return (
-    <div className="absolute top-3 left-1/2 max-w-full -translate-x-1/2">
-      <Dock className="items-end pb-3">
+    <div className="absolute flex flex-col items-center gap-4 top-3 left-1/2 max-w-full -translate-x-1/2">
+      <Dock className="items-end pb-1">
         {data.map((item, idx) => (
           <DockItem
             key={idx}
@@ -98,6 +98,9 @@ export function AppleStyleDock({ selectedTool, setSelectedTool }: DockProps) {
           </DockItem>
         ))}
       </Dock>
+      <p className="text-sm text-gray-500 dark:text-gray-400">
+        press spacebar to move the canvas, mouse-wheel for zooming
+      </p>
     </div>
   );
 }
