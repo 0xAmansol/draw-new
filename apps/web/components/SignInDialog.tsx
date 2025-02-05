@@ -43,7 +43,7 @@ function SignInDialog() {
       toast({
         title: "user signed in",
       });
-      router.push("/canvas/9");
+      router.push("/");
     } catch (error) {
       toast({
         title: `error signing in: ${error}`,

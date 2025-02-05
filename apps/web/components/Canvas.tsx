@@ -5,6 +5,8 @@ import React, { useEffect, useRef, useState } from "react";
 import rough from "roughjs";
 import { Drawable } from "roughjs/bin/core";
 import { Loading } from "./text-rotate";
+import { toast } from "@workspace/ui/hooks/use-toast";
+import { Toast } from "@workspace/ui/components/toast";
 
 interface CanvasProps {
   selectedTool: string;
@@ -63,6 +65,7 @@ const Canvas = ({ selectedTool, roomId }: CanvasProps) => {
   const [isPanning, setIsPanning] = useState(false);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [token, setToken] = useState("");
 
   // Refs - keep all refs together
   const wsRef = useRef<WebSocket | null>(null);
@@ -74,6 +77,13 @@ const Canvas = ({ selectedTool, roomId }: CanvasProps) => {
   const generator = useRef<ReturnType<typeof rough.generator> | null>(null);
 
   // All useEffect hooks
+  useEffect(() => {
+    const storedToken = localStorage.getItem("token");
+    if (storedToken) {
+      setToken(storedToken);
+    }
+  }, [token]);
+
   useEffect(() => {
     elementsRef.current = elements;
   }, [elements]);
@@ -98,25 +108,40 @@ const Canvas = ({ selectedTool, roomId }: CanvasProps) => {
   }, []);
 
   useEffect(() => {
-    const ws = new WebSocket(
-      `${WS_BACKEND_URL}?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJjbTZpMTd6MWgwMDAwaWx6ODdnb2YzdGRrIiwiaWF0IjoxNzM4MTYyNzU2fQ.9DuYwSm74XOjrnfCUVyfIHv3mqwz2A2oJu6y0l8Y4FM`
-    );
+    if (!token) return;
 
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join_room", roomId }));
+    const ws = new WebSocket(`${WS_BACKEND_URL}?token=${token}`);
+
+    ws.onopen = () => {
+      console.log("WebSocket connected");
+      ws.send(JSON.stringify({ type: "join_room", roomId }));
+    };
+
+    ws.onerror = (error) => {
+      console.error("WebSocket error:", error);
+      toast({
+        title: "Websocket Error",
+      });
+    };
+
     ws.onmessage = (message) => {
       try {
         const data = JSON.parse(message.data);
         if (data.type === "chat") {
           const newElement = deserializeElement(JSON.parse(data.message));
           setElements((prev) => [...prev, newElement]);
+          console.log("message arrived");
         }
       } catch (error) {
         console.error("Error parsing WebSocket message:", error);
+      } finally {
+        console.log("error");
       }
     };
+
     wsRef.current = ws;
     return () => ws.close();
-  }, [roomId]);
+  }, [token, roomId]); // Add token as dependency
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -140,34 +165,53 @@ const Canvas = ({ selectedTool, roomId }: CanvasProps) => {
   useEffect(() => {
     const fetchExistingShapes = async () => {
       try {
-        setIsLoading(true);
+        console.log("Fetching existing shapes for room:", roomId);
         const existingShapes = await getExistingElements(roomId);
-        setElements(existingShapes);
+        console.log("Received shapes:", existingShapes);
+
+        // Recreate rough elements
+        const generator = rough.generator();
+        const recreatedShapes = existingShapes.map((shape) => {
+          const roughElement = createElement(shape.tool, {
+            x1: shape.x1,
+            y1: shape.y1,
+            x2: shape.x2,
+            y2: shape.y2,
+          });
+          return roughElement;
+        });
+
+        setElements(recreatedShapes);
       } catch (error) {
-        console.log("error fetching shapes: ", error);
-      } finally {
-        setIsLoading(false);
+        console.error("Error fetching shapes:", error);
       }
     };
-    fetchExistingShapes();
+
+    if (roomId) {
+      fetchExistingShapes();
+    }
   }, [roomId]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !rc.current) return;
 
+    console.log("Rendering elements:", elements);
     const ctx = canvas.getContext("2d");
-    ctx?.clearRect(0, 0, canvas.width, canvas.height);
+    if (!ctx) return;
 
-    ctx?.save();
-    ctx?.scale(scale, scale);
-    ctx?.translate(offset.x / scale, offset.y / scale);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.scale(scale, scale);
+    ctx.translate(offset.x / scale, offset.y / scale);
 
-    elements.forEach(({ roughElement }) => {
-      if (roughElement) rc.current?.draw(roughElement);
+    elements.forEach((element) => {
+      if (element.roughElement) {
+        rc.current?.draw(element.roughElement);
+      }
     });
 
-    ctx?.restore();
+    ctx.restore();
   }, [elements, scale, offset]);
 
   const createElement = (tool: string, params: Params): Element => {
@@ -273,6 +317,9 @@ const Canvas = ({ selectedTool, roomId }: CanvasProps) => {
         roomId,
       };
       wsRef.current.send(JSON.stringify(elementData));
+      toast({
+        title: "message sent",
+      });
     }
     setDrawing(false);
     drawingElementRef.current = null;
