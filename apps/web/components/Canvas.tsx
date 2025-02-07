@@ -7,6 +7,8 @@ import { Drawable } from "roughjs/bin/core";
 import { Loading } from "./text-rotate";
 import { toast } from "@workspace/ui/hooks/use-toast";
 import { Toast } from "@workspace/ui/components/toast";
+import { DotPattern } from "@workspace/ui/components/dot-pattern";
+import { ShareButton } from "./ShareButton";
 
 interface CanvasProps {
   selectedTool: string;
@@ -66,6 +68,7 @@ const Canvas = ({ selectedTool, roomId }: CanvasProps) => {
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [token, setToken] = useState("");
+  const [selectedElement, setSelectedElement] = useState<Element>();
 
   // Refs - keep all refs together
   const wsRef = useRef<WebSocket | null>(null);
@@ -272,6 +275,13 @@ const Canvas = ({ selectedTool, roomId }: CanvasProps) => {
     }
 
     const { x, y } = getCanvasCoordinates(e.clientX, e.clientY);
+    const selected = elements.find(
+      (el) => x >= el.x1 && x <= el.x2 && y >= el.y1 && y <= el.y2
+    );
+    if (selected) {
+      setSelectedElement(selected);
+      return;
+    }
     setDrawing(true);
 
     const newElement = createElement(selectedTool, {
@@ -301,6 +311,23 @@ const Canvas = ({ selectedTool, roomId }: CanvasProps) => {
         newElements[newElements.length - 1] = updatedElement;
         return newElements;
       });
+    } else if (selectedElement) {
+      const { x, y } = getCanvasCoordinates(e.clientX, e.clientY);
+      const deltaX = x - selectedElement.x1;
+      const deltaY = y - selectedElement.y1;
+
+      const updatedElement = {
+        ...selectedElement,
+        x1: selectedElement.x1 + deltaX,
+        y1: selectedElement.y1 + deltaY,
+        x2: selectedElement.x2 + deltaX,
+        y2: selectedElement.y2 + deltaY,
+      };
+
+      setSelectedElement(updatedElement);
+      setElements((prev) =>
+        prev.map((el) => (el === selectedElement ? updatedElement : el))
+      );
     }
   };
 
@@ -308,12 +335,14 @@ const Canvas = ({ selectedTool, roomId }: CanvasProps) => {
     if (isPanning) {
       setIsPanning(false);
     } else if (
-      drawingElementRef.current &&
+      (drawingElementRef.current || selectedElement) &&
       wsRef.current?.readyState === WebSocket.OPEN
     ) {
       const elementData = {
         type: "chat",
-        message: JSON.stringify(serializeElement(drawingElementRef.current)),
+        message: JSON.stringify(
+          serializeElement(drawingElementRef.current || selectedElement!)
+        ),
         roomId,
       };
       wsRef.current.send(JSON.stringify(elementData));
@@ -323,6 +352,7 @@ const Canvas = ({ selectedTool, roomId }: CanvasProps) => {
     }
     setDrawing(false);
     drawingElementRef.current = null;
+    setSelectedElement(undefined);
   };
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -350,6 +380,18 @@ const Canvas = ({ selectedTool, roomId }: CanvasProps) => {
       className="canvas-container"
       style={{ width: "100%", height: "100vh" }}
     >
+      <DotPattern
+        width={15}
+        height={15}
+        cx={1}
+        cy={1}
+        cr={1}
+        className="absolute inset-0 z-10"
+      />
+      <div className="top-7 right-7  absolute z-50">
+        <ShareButton />
+      </div>
+
       {isLoading ? (
         <div className="w-full h-full flex items-center justify-center">
           <div className="flex flex-col items-center gap-2">

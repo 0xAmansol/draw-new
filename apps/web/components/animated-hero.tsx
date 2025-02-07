@@ -5,9 +5,6 @@ import { motion } from "framer-motion";
 import { MoveRight } from "lucide-react";
 import { Button } from "@workspace/ui/components/button";
 
-import { SignInDialog } from "./SignInDialog";
-import { RoomDialog } from "./RoomDialog";
-
 function Hero() {
   const [titleNumber, setTitleNumber] = useState(0);
   const titles = useMemo(
@@ -66,10 +63,7 @@ function Hero() {
 
             <p className="text-lg md:text-xl leading-relaxed tracking-tight text-muted-foreground max-w-2xl text-center"></p>
           </div>
-          <div className="flex flex-row gap-3">
-            <RoomDialog />
-            <SignInDialog />
-          </div>
+          <div className="flex flex-row gap-3"></div>
         </div>
       </div>
     </div>

@@ -75,8 +75,8 @@ interface DockProps {
 
 export function AppleStyleDock({ selectedTool, setSelectedTool }: DockProps) {
   return (
-    <div className="absolute flex flex-col items-center gap-4 top-3 left-1/2 max-w-full -translate-x-1/2">
-      <Dock className="items-end pb-1">
+    <div className="absolute flex flex-col items-center gap-4 top-3 left-1/2 max-w-full -translate-x-1/2 z-50">
+      <Dock className="items-end ">
         {data.map((item, idx) => (
           <DockItem
             key={idx}
